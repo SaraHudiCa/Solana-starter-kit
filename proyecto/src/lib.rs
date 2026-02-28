@@ -1,49 +1,69 @@
 use anchor_lang::prelude::*;
+// ID del Solana Program, este espacio se llena automaticamente al haver el "build"
+declare_id!("tBcY8vjdhsqLA2gCd9QipVwsXaAEukFvmrXqGbEZQik");
 
-declare_id!("GaDGYKxompZHDWQ45bAjKLFdYmFtn4JCq34RwGVzPzX8") 
-        -> Result<()> {
+#[program] // Macro que convierte codigo de Rust a Solana. Apartir de aqui empieza tu codigo!
+pub mod memories{
+   use super::*; 
 
-        let profile = &mut context.accounts.profile;
+    // CREATE PROFILE
 
+    pub fn crear_profile(context: Context<CreateProfile>) -> Result<()>{ 
+        
+        let profile= &mut context.accounts.profile;
+         // Accedemos al wallet address del caller 
         profile.owner = context.accounts.user.key();
         profile.memory_count = 0;
 
-        Ok(())
+
+        Ok(())  
+        // Representa una transaccion exitosa 
+
+ }
+        // CREATE MEMORY
+
+        pub fn create_memory(
+            context: Context<CreateMemory>,
+            title: String,
+            description: String,
+        ) -> Result<()> {
+
+        require!(title.len()<=50, ErrorCode::TitleTooLong);
+        require!(description.len() <= 500, ErrorCode::DescriptionTooLong);
+
+       let profile = &mut context.accounts.profile;
+       let memory = &mut context.accounts.memory;
+       let clock = Clock::get()?;
+
+       memory.owner = context.accounts.user.key();
+       memory.memory_id = profile.memory_count;
+
+       memory.title = title;
+       memory.description = description;
+
+       memory.created_at = clock.unix_timestamp;
+       memory.updated_at = clock.unix_timestamp;
+    
+
+       profile.memory_count += 1;
+
+       emit!(MemoryCreated {
+        owner: memory.owner,
+        memory_id: memory.memory_id,
+        timestamp: clock.unix_timestamp
+     });
+
+       Ok(())
     }
-
-    // CREATE MEMORY
-
-    pub fn create_memory(
-        context: Context<CreateMemory>,
-        title: String,
-        description: String,
-    ) -> Result<()> {
-
-        let profile = &mut context.accounts.profile;
-        let memory = &mut context.accounts.memory;
-        let clock = Clock::get()?;
-
-        memory.owner = context.accounts.user.key();
-        memory.memory_id = profile.memory_count;
-
-        memory.title = title;
-        memory.description = description;
-
-        memory.created_at = clock.unix_timestamp;
-        memory.updated_at = clock.unix_timestamp;
-
-        profile.memory_count += 1;
-
-        Ok(())
-    }
-
     // UPDATE MEMORY
-
-    pub fn update_memory(
+    pub fn update_memory (
         context: Context<UpdateMemory>,
         title: String,
         description: String,
     ) -> Result<()> {
+
+        require!(title.len()<= 50, ErrorCode::TitleTooLong);
+        require!(description.len() <= 500, ErrorCode::DescriptionTooLong);
 
         let memory = &mut context.accounts.memory;
         let clock = Clock::get()?;
@@ -58,27 +78,40 @@ declare_id!("GaDGYKxompZHDWQ45bAjKLFdYmFtn4JCq34RwGVzPzX8")
 
         memory.updated_at = clock.unix_timestamp;
 
+        emit!(MemoryUpdated {
+            owner: memory.owner,
+            memory_id: memory.memory_id,
+            timestamp: clock.unix_timestamp
+        });
+
         Ok(())
     }
-
-    // DELETE MEMORY
+     // DELETE MEMORY
 
     pub fn delete_memory(
         context: Context<DeleteMemory>,
     ) -> Result<()> {
 
         let memory = &context.accounts.memory;
+        let clock = Clock::get()?;
+
 
         require!(
             memory.owner == context.accounts.user.key(),
             ErrorCode::Unauthorized
         );
+         emit!(MemoryDeleted {
+            owner: memory.owner,
+            memory_id: memory.memory_id,
+            timestamp: clock.unix_timestamp
+        });
 
         Ok(())
     }
+}
+   //PROFILE ACCOUNT
 
-// PROFILE ACCOUNT
-#[account]
+    #[account]
 pub struct Profile {
 
     pub owner: Pubkey,
@@ -106,7 +139,8 @@ pub struct Memory {
     pub created_at: i64,
     pub updated_at: i64,
 }
-// TAMAÑO MEMORY
+// MEMORY SIZE
+
 impl Memory {
 
     pub const MAX_TITLE: usize = 50;
@@ -122,7 +156,8 @@ impl Memory {
         8 + // created
         8;  // updated
 }
-// CREATE PROFILE
+
+//CREATE PROFILE
 
 #[derive(Accounts)]
 pub struct CreateProfile<'info> {
@@ -171,6 +206,7 @@ pub struct CreateMemory<'info> {
 
     pub system_program: Program<'info, System>,
 }
+
 // UPDATE MEMORY
 
 #[derive(Accounts)]
@@ -182,7 +218,7 @@ pub struct UpdateMemory<'info> {
     pub user: Signer<'info>,
 }
 
-// DELETE MEMORY
+//DELETE MEMORY
 
 #[derive(Accounts)]
 pub struct DeleteMemory<'info> {
@@ -197,6 +233,33 @@ pub struct DeleteMemory<'info> {
     pub user: Signer<'info>,
 }
 
+// EVENTS
+
+#[event]
+pub struct MemoryCreated {
+
+    pub owner: Pubkey,
+    pub memory_id: u64,
+    pub timestamp: i64,
+}
+
+
+#[event]
+pub struct MemoryUpdated {
+
+    pub owner: Pubkey,
+    pub memory_id: u64,
+    pub timestamp: i64,
+}
+
+
+#[event]
+pub struct MemoryDeleted {
+
+    pub owner: Pubkey,
+    pub memory_id: u64,
+    pub timestamp: i64,
+}
 //ERRORS
 
 #[error_code]
@@ -204,4 +267,10 @@ pub enum ErrorCode {
 
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Title too long")]
+    TitleTooLong,
+
+    #[msg("Description too long")]
+    DescriptionTooLong,
 }
+
