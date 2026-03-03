@@ -1,202 +1,98 @@
 use anchor_lang::prelude::*;
-// ID del Solana Program, este espacio se llena automaticamente al haver el "build"
-declare_id!("tBcY8vjdhsqLA2gCd9QipVwsXaAEukFvmrXqGbEZQik");
 
-#[program] // Macro que convierte codigo de Rust a Solana. Apartir de aqui empieza tu codigo!
-pub mod memories{
-   use super::*; 
+declare_id!(""); // ← Pega aquí tu Program ID
 
-    // CREATE PROFILE
+#[program]
+pub mod memories {
+    use super::*;
 
-    pub fn crear_profile(context: Context<CreateProfile>) -> Result<()>{ 
-        
-        let profile= &mut context.accounts.profile;
-         // Accedemos al wallet address del caller 
-        profile.owner = context.accounts.user.key();
-        profile.memory_count = 0;
-
-
-        Ok(())  
-        // Representa una transaccion exitosa 
-
- }
-        // CREATE MEMORY
-
-        pub fn create_memory(
-            context: Context<CreateMemory>,
-            title: String,
-            description: String,
-        ) -> Result<()> {
-
-        require!(title.len()<=50, ErrorCode::TitleTooLong);
-        require!(description.len() <= 500, ErrorCode::DescriptionTooLong);
-
-       let profile = &mut context.accounts.profile;
-       let memory = &mut context.accounts.memory;
-       let clock = Clock::get()?;
-
-       memory.owner = context.accounts.user.key();
-       memory.memory_id = profile.memory_count;
-
-       memory.title = title;
-       memory.description = description;
-
-       memory.created_at = clock.unix_timestamp;
-       memory.updated_at = clock.unix_timestamp;
-    
-
-       profile.memory_count += 1;
-
-       emit!(MemoryCreated {
-        owner: memory.owner,
-        memory_id: memory.memory_id,
-        timestamp: clock.unix_timestamp
-     });
-
-       Ok(())
-    }
-    // UPDATE MEMORY
-    pub fn update_memory (
-        context: Context<UpdateMemory>,
+    // ── CREATE ────────────────────────────────────────────────
+    pub fn create_memory(
+        ctx: Context<CreateMemory>,
+        id: u64,
         title: String,
-        description: String,
+        content: String,
     ) -> Result<()> {
+        require!(!title.is_empty(),            MemoryError::EmptyTitle);
+        require!(title.len()   <= 100,         MemoryError::TitleTooLong);
+        require!(content.len() <= 1000,        MemoryError::ContentTooLong);
 
-        require!(title.len()<= 50, ErrorCode::TitleTooLong);
-        require!(description.len() <= 500, ErrorCode::DescriptionTooLong);
+        let memory    = &mut ctx.accounts.memory;
+        let clock     = Clock::get()?;
 
-        let memory = &mut context.accounts.memory;
-        let clock = Clock::get()?;
+        memory.owner      = ctx.accounts.user.key();
+        memory.id         = id;
+        memory.title      = title;
+        memory.content    = content;
+        memory.created_at = clock.unix_timestamp;
+        memory.updated_at = clock.unix_timestamp;
+        memory.bump       = ctx.bumps.memory;
 
-        require!(
-            memory.owner == context.accounts.user.key(),
-            ErrorCode::Unauthorized
-        );
+        msg!("📝 Nota creada — id: {} | título: {}", memory.id, memory.title);
+        Ok(())
+    }
 
-        memory.title = title;
-        memory.description = description;
+    // ── UPDATE ────────────────────────────────────────────────
+    pub fn update_memory(
+        ctx: Context<UpdateMemory>,
+        _id: u64,
+        title: String,
+        content: String,
+    ) -> Result<()> {
+        require!(!title.is_empty(),            MemoryError::EmptyTitle);
+        require!(title.len()   <= 100,         MemoryError::TitleTooLong);
+        require!(content.len() <= 1000,        MemoryError::ContentTooLong);
 
+        let memory    = &mut ctx.accounts.memory;
+        let clock     = Clock::get()?;
+
+        memory.title      = title;
+        memory.content    = content;
         memory.updated_at = clock.unix_timestamp;
 
-        emit!(MemoryUpdated {
-            owner: memory.owner,
-            memory_id: memory.memory_id,
-            timestamp: clock.unix_timestamp
-        });
-
+        msg!("✏️ Nota actualizada — id: {}", memory.id);
         Ok(())
     }
-     // DELETE MEMORY
 
-    pub fn delete_memory(
-        context: Context<DeleteMemory>,
-    ) -> Result<()> {
-
-        let memory = &context.accounts.memory;
-        let clock = Clock::get()?;
-
-
-        require!(
-            memory.owner == context.accounts.user.key(),
-            ErrorCode::Unauthorized
-        );
-         emit!(MemoryDeleted {
-            owner: memory.owner,
-            memory_id: memory.memory_id,
-            timestamp: clock.unix_timestamp
-        });
-
+    // ── DELETE ────────────────────────────────────────────────
+    pub fn delete_memory(ctx: Context<DeleteMemory>, _id: u64) -> Result<()> {
+        msg!("🗑️ Nota eliminada — id: {}", ctx.accounts.memory.id);
         Ok(())
     }
 }
-   //PROFILE ACCOUNT
 
-    #[account]
-pub struct Profile {
-
-    pub owner: Pubkey,
-    pub memory_count: u64,
-}
-
-impl Profile {
-
-    pub const SIZE: usize =
-        32 + // owner
-        8;   // counter
-}
-
-// MEMORY ACCOUNT
+// ─────────────────────────────────────────────────────────────
+//  CUENTA
+// ─────────────────────────────────────────────────────────────
 
 #[account]
 pub struct Memory {
-
-    pub owner: Pubkey,
-    pub memory_id: u64,
-
-    pub title: String,
-    pub description: String,
-
-    pub created_at: i64,
-    pub updated_at: i64,
+    pub owner:      Pubkey,   // 32
+    pub id:         u64,      //  8
+    pub created_at: i64,      //  8
+    pub updated_at: i64,      //  8
+    pub bump:       u8,       //  1
+    pub title:      String,   //  4 + 100
+    pub content:    String,   //  4 + 1000
 }
-// MEMORY SIZE
 
 impl Memory {
-
-    pub const MAX_TITLE: usize = 50;
-    pub const MAX_DESCRIPTION: usize = 500;
-
-    pub const SIZE: usize =
-        32 + // owner
-        8 +  // id
-
-        4 + Self::MAX_TITLE +
-        4 + Self::MAX_DESCRIPTION +
-
-        8 + // created
-        8;  // updated
+    // 8 (disc) + 32 + 8 + 8 + 8 + 1 + (4+100) + (4+1000) = 1173
+    pub const LEN: usize = 8 + 32 + 8 + 8 + 8 + 1 + 4 + 100 + 4 + 1000;
 }
 
-//CREATE PROFILE
+// ─────────────────────────────────────────────────────────────
+//  CONTEXTOS
+// ─────────────────────────────────────────────────────────────
 
 #[derive(Accounts)]
-pub struct CreateProfile<'info> {
-
-    #[account(
-        init,
-        payer = user,
-        space = 8 + Profile::SIZE,
-        seeds = [b"profile", user.key().as_ref()],
-        bump
-    )]
-    pub profile: Account<'info, Profile>,
-
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
-}
-// CREATE MEMORY
-
-#[derive(Accounts)]
+#[instruction(id: u64)]
 pub struct CreateMemory<'info> {
-
-    #[account(
-        mut,
-        seeds = [b"profile", user.key().as_ref()],
-        bump
-    )]
-    pub profile: Account<'info, Profile>,
-
     #[account(
         init,
         payer = user,
-        space = 8 + Memory::SIZE,
-        seeds = [
-            b"memory",
-            user.key().as_ref(),
-            &profile.memory_count.to_le_bytes()
-        ],
+        space = Memory::LEN,
+        seeds = [b"memory", user.key().as_ref(), &id.to_le_bytes()],
         bump
     )]
     pub memory: Account<'info, Memory>,
@@ -207,70 +103,58 @@ pub struct CreateMemory<'info> {
     pub system_program: Program<'info, System>,
 }
 
-// UPDATE MEMORY
-
 #[derive(Accounts)]
+#[instruction(id: u64)]
 pub struct UpdateMemory<'info> {
-
-    #[account(mut)]
-    pub memory: Account<'info, Memory>,
-
-    pub user: Signer<'info>,
-}
-
-//DELETE MEMORY
-
-#[derive(Accounts)]
-pub struct DeleteMemory<'info> {
-
     #[account(
         mut,
-        close = user
+        has_one = owner @ MemoryError::Unauthorized,
+        seeds   = [b"memory", user.key().as_ref(), &id.to_le_bytes()],
+        bump    = memory.bump,
     )]
     pub memory: Account<'info, Memory>,
 
+    /// CHECK: validado por has_one
+    pub owner: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(id: u64)]
+pub struct DeleteMemory<'info> {
+    #[account(
+        mut,
+        close = user,
+        has_one = owner @ MemoryError::Unauthorized,
+        seeds = [b"memory", user.key().as_ref(), &id.to_le_bytes()],
+        bump  = memory.bump,
+    )]
+    pub memory: Account<'info, Memory>,
+
+    /// CHECK: validado por has_one
+    pub owner: AccountInfo<'info>,
+
     #[account(mut)]
     pub user: Signer<'info>,
 }
 
-// EVENTS
-
-#[event]
-pub struct MemoryCreated {
-
-    pub owner: Pubkey,
-    pub memory_id: u64,
-    pub timestamp: i64,
-}
-
-
-#[event]
-pub struct MemoryUpdated {
-
-    pub owner: Pubkey,
-    pub memory_id: u64,
-    pub timestamp: i64,
-}
-
-
-#[event]
-pub struct MemoryDeleted {
-
-    pub owner: Pubkey,
-    pub memory_id: u64,
-    pub timestamp: i64,
-}
-//ERRORS
+// ─────────────────────────────────────────────────────────────
+//  ERRORES
+// ─────────────────────────────────────────────────────────────
 
 #[error_code]
-pub enum ErrorCode {
-
-    #[msg("Unauthorized")]
+pub enum MemoryError {
+    #[msg("No eres el propietario de esta nota.")]
     Unauthorized,
-    #[msg("Title too long")]
+    #[msg("El título no puede estar vacío.")]
+    EmptyTitle,
+    #[msg("El título supera los 100 caracteres.")]
     TitleTooLong,
-
-    #[msg("Description too long")]
-    DescriptionTooLong,
+    #[msg("El contenido supera los 1000 caracteres.")]
+    ContentTooLong,
 }
 
